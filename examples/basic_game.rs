@@ -1,7 +1,7 @@
-extern crate star_engine;
+extern crate hyperspeed;
 
-use star_engine::*;
-use star_engine::core::*;
+use hyperspeed::*;
+use hyperspeed::core::*;
 
 use std::collections::HashMap;
 
@@ -111,7 +111,7 @@ impl MasterController for M {
 fn main() {
     let mut engine = Engine::new().with_observer(O {})
                                   .with_mc(M {})
-                                  .build();
+                                  .build().unwrap();
     
     engine.tick();
 }
