@@ -1,4 +1,4 @@
-# Star Engine
+# Hyperspeed Engine
 
 A multithreaded, networked, 2D game engine.
 
