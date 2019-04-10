@@ -1,6 +1,6 @@
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Events<E> {
-    events: Vec<E>
+    pub events: Vec<E>
 }
 
 impl<E> Events<E> {

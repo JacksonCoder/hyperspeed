@@ -4,9 +4,7 @@ mod input;
 mod mc;
 mod observer;
 mod system;
-mod controller;
 
-pub use controller::*;
 pub use connection::*;
 pub use events::*;
 pub use input::*;
