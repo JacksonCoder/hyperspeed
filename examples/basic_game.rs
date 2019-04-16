@@ -1,92 +1,63 @@
 extern crate hyperspeed;
 
 use hyperspeed::*;
-use hyperspeed::core::*;
+use hyperspeed::core::{World, Engine, MasterController, EngineInstruction};
 
 use std::collections::HashMap;
 
+// This is a demo of what Hyperspeed can do.
+// It is a simple pong game, meant to be played by two players.
+
 struct Position {
-    x: i32,
-    y: i32
+    x: u32,
+    y: u32
 }
 
-impl Component for Position {
-    type Storage = VecStorage<Self>;
+define_component!(Position);
+
+struct PlayerControllable {
+    player_key: String
 }
 
-struct Velocity {
-    x: i32,
-    y: i32
-}
+define_component!(PlayerControllable);
 
-struct Item {
-    inside: Option<Entity>
-}
-
-impl Component for Item {
-    type Storage = VecStorage<Self>;
-}
-
-struct Player {
-    items: Vec<Entity>,
-    key: String
-}
-
-impl Component for Player {
-    type Storage = VecStorage<Self>;
-}
-
-
-struct MotionSystem;
-
-struct PickupController;
-
-#[derive(Clone)]
-enum Event {
-    Empty,
-    ItemPickup {
-        item_id: Entity,
-        player_id: Entity
+fn start_game(world: &mut World) -> bool {
+    if world.connections.size() < 2 {
+        println!("We can't start the game yet!");
+        return false;
     }
+
+    true
 }
 
-impl Default for Event {
-    fn default() -> Event {
-       Event::Empty
-    }
-}
+struct MC {}
 
-struct MoveSystem;
+impl MasterController for MC {
+    type ObserverEvent = Message;
 
-impl<'a> System<'a> for MoveSystem {
-    type SystemData = (WriteStorage<'a, Player>, ReadStorage<'a, Position>, Read<'a, Events<Event>>);
-    
-    fn run(&mut self, (mut players, pos, events): Self::SystemData) {
-        for (player, pos) in (&mut players, &pos).join() {
-            // TODO: impl
-        }
-    }
-}
-
-struct M;
-
-impl MasterController for M {
-    type ObserverEvent = Event;
-    
-    fn tick(&mut self, world: &mut World, delta_time: f32) -> EngineInstruction {
+    fn tick(&mut self, world: &mut World, dt: f64) -> EngineInstruction {
         EngineInstruction::Run {
             run_dispatcher: true
         }
     }
 }
 
-fn main() {
-    let mut engine = Engine::new().with_mc(M {})
-                                  .build().unwrap();
-    
-    engine.start_server();
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum Message {
+    Up,
+    Down,
+    Left,
+    Right
+}
 
-    loop {
-        engine.tick();
+fn main() {
+    let mut engine = Engine::<Message>::new().with_mc(MC {}).build();
+    if let Some(mut engine) = engine {
+        engine.start_server();
+        loop {
+            engine.tick();
+        }
+    } else {
+        println!("Engine could not be initialized!");
     }
 }
