@@ -2,16 +2,19 @@ use super::world::*;
 use super::Server;
 use super::ServerConfig;
 use super::PlayerInputBuffer;
+use crate::utils::*;
 
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 
 use std::collections::{HashMap, VecDeque};
+use specs::Component;
+use super::server::InputBufferMutex;
 
 pub struct Engine<'a, 'b, E: Sync + Send + Clone + 'static> {
     pub world: World<'a, 'b>,
     master_controller: Box<MasterController<ObserverEvent=E>>,
-    input_buffer: Option<Arc<Mutex<PlayerInputBuffer>>>,
+    input_buffer: Option<InputBufferMutex>,
     server_conf: ServerConfig
 }
 
@@ -30,10 +33,24 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         }
     }
 
+    pub fn init_resources(&mut self) {
+        // This is the event/messaging
+        self.world.ecs_world.add_resource(Messages::<E>::new());
+        self.world.ecs_world.add_resource(InputMap::new());
+    }
+
+    pub fn register<T: Component>(&mut self)
+    where <T as Component>::Storage : std::default::Default {
+        self.world.ecs_world.register::<T>();
+    }
+
     pub fn start_server(&mut self) {
         let mut server = Server::new(self.server_conf.clone());
         self.input_buffer = Some(server.get_input_buffer()); // Get a reference to the input buffer even after it gets moved to another thread
         spawn(move || server.main_loop());
+
+        // Call MC init
+        self.master_controller.start(&mut self.world, 0.0);
     }
 
     fn get_inputs(&mut self) -> HashMap<String, VecDeque<Input>> {
@@ -101,14 +118,13 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> EngineBuilder<'a, 'b, E> {
             world: World {
                 system_executor: self.system_executor_builder.build(),
                 ecs_world: specs::prelude::World::new(),
-                connections: ConnectionCollection {},
+                connections: ConnectionCollection::new(),
             },
             master_controller: self.master_controller?,
             server_conf: self.server_conf,
             input_buffer: None,
         };
-        engine.world.ecs_world.add_resource(Events::<E>::new());
-        engine.world.ecs_world.add_resource(HashMap::<String, VecDeque<Input>>::new());
+        engine.init_resources();
         Some(engine)
     }
 }
