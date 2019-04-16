@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![feature(duration_float)]
 
 // Hyperspeed Engine is a fusion of an ECS and an observer-event system.
 // For example, how would picking up an item work with an ECS?

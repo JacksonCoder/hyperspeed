@@ -10,12 +10,14 @@ use std::thread::spawn;
 use std::collections::{HashMap, VecDeque};
 use specs::Component;
 use super::server::InputBufferMutex;
+use std::time::Instant;
 
 pub struct Engine<'a, 'b, E: Sync + Send + Clone + 'static> {
     pub world: World<'a, 'b>,
     master_controller: Box<MasterController<ObserverEvent=E>>,
     input_buffer: Option<InputBufferMutex>,
-    server_conf: ServerConfig
+    server_conf: ServerConfig,
+    prev_time: Instant
 }
 
 pub struct EngineBuilder<'a, 'b, E: Sync + Send + Clone + 'static> {
@@ -49,6 +51,8 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         self.input_buffer = Some(server.get_input_buffer()); // Get a reference to the input buffer even after it gets moved to another thread
         spawn(move || server.main_loop());
 
+        self.prev_time = Instant::now();
+
         // Call MC init
         self.master_controller.start(&mut self.world, 0.0);
     }
@@ -69,8 +73,10 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
     }
     
     pub fn tick(&mut self) {
-        let delta_time = 0.05; // This is a constant for now. Clock will be added soon.
-        let instruction = self.master_controller.tick(&mut self.world, delta_time);
+        let tmp = self.prev_time;
+        self.prev_time = Instant::now();
+        let time = self.prev_time - tmp;
+        let instruction = self.master_controller.tick(&mut self.world, time.as_float_secs());
         match instruction {
             EngineInstruction::Run {
                 run_dispatcher
@@ -123,6 +129,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> EngineBuilder<'a, 'b, E> {
             master_controller: self.master_controller?,
             server_conf: self.server_conf,
             input_buffer: None,
+            prev_time: Instant::now()
         };
         engine.init_resources();
         Some(engine)
