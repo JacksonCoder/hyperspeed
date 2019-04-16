@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use bytes::{BytesMut, BufMut};
 use std::ops::{Deref, DerefMut};
 
-type InputBufferMutex = Arc<Mutex<PlayerInputBuffer>>;
+pub(crate) type InputBufferMutex = Arc<Mutex<PlayerInputBuffer>>;
 
 struct Message {
 
@@ -118,7 +118,7 @@ fn find_stream_end_chars(msg: String) -> usize {
             return msg.find(character).unwrap();
         }
     }
-    return msg.len() - 1;
+    return 0;
 }
 
 fn put_buffer(input_buffer: &mut InputBufferMutex, player: String, input: Input) {
@@ -127,12 +127,29 @@ fn put_buffer(input_buffer: &mut InputBufferMutex, player: String, input: Input)
     drop(lock);
 }
 
+
+// A note on something that isn't super intuitive here: we close the stream
+// if we get an empty stream back. Why? Because this would be unexpected behavior
+// from the client and signifies that the socket has closed.
+const EMPTY_STREAM: [u8; 512] = [0; 512];
+const EMPTY_STREAM_PATIENCE: u32 = 2;
 fn stream_communicate(mut stream: TcpStream, mut input_m: Arc<Mutex<PlayerInputBuffer>>, key: String) {
     println!("Connection made!");
-    let mut buffer = Vec::with_capacity(BUFFER_SIZE);
+    let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
     buffer.put(&[0; BUFFER_SIZE][..]);
+    let mut patience = EMPTY_STREAM_PATIENCE;
     loop {
         stream.read(buffer.as_mut()).unwrap();
+        if buffer.as_ref() == &EMPTY_STREAM[..] {
+            if patience < 1 {
+                println!("Closing connection to client"); // TODO: Make it specific
+                return;
+            } else {
+                patience -= 1;
+                continue;
+            }
+        }
+        patience = EMPTY_STREAM_PATIENCE; // This only is reached if the buffer was not empty
         if buffer.len() > 0 {
             let msg = String::from_utf8_lossy(buffer.as_ref());
             let msg: String = msg.chars().take(find_stream_end_chars(msg.to_string())).collect();
