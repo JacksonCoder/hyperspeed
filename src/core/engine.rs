@@ -5,19 +5,23 @@ use super::PlayerInputBuffer;
 use crate::utils::*;
 
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread::spawn;
 
 use std::collections::{HashMap, VecDeque};
 use specs::Component;
 use super::server::InputBufferMutex;
 use std::time::Instant;
+use crate::core::world::Connection;
 
 pub struct Engine<'a, 'b, E: Sync + Send + Clone + 'static> {
     pub world: World<'a, 'b>,
     master_controller: Box<MasterController<ObserverEvent=E>>,
     input_buffer: Option<InputBufferMutex>,
     server_conf: ServerConfig,
-    prev_time: Instant
+    prev_time: Instant,
+    connection_channel: Receiver<(Connection, Sender<ClientView>)>,
+    view_channels: HashMap<String, Sender<ClientView>>
 }
 
 pub struct EngineBuilder<'a, 'b, E: Sync + Send + Clone + 'static> {
@@ -39,6 +43,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         // This is the event/messaging
         self.world.ecs_world.add_resource(Messages::<E>::new());
         self.world.ecs_world.add_resource(InputMap::new());
+        self.world.ecs_world.add_resource(ViewMap::new());
     }
 
     pub fn register<T: Component>(&mut self)
@@ -47,7 +52,9 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
     }
 
     pub fn start_server(&mut self) {
-        let mut server = Server::new(self.server_conf.clone());
+        let (sender, reciever) = channel();
+        let mut server = Server::new(self.server_conf.clone(), sender);
+        self.connection_channel = reciever;
         self.input_buffer = Some(server.get_input_buffer()); // Get a reference to the input buffer even after it gets moved to another thread
         spawn(move || server.main_loop());
 
@@ -55,6 +62,16 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
 
         // Call MC init
         self.master_controller.start(&mut self.world, 0.0);
+    }
+
+    fn get_new_connection(&mut self) -> Option<(Connection, Sender<ClientView>)> {
+        match self.connection_channel.try_recv() {
+            Ok(C) => Some(C),
+            Err(E) => match E {
+                Empty => None,
+                Disconnected => panic!("Engine fault: Server channel was disconnected")
+            }
+        }
     }
 
     fn get_inputs(&mut self) -> HashMap<String, VecDeque<Input>> {
@@ -77,6 +94,19 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         self.prev_time = Instant::now();
         let time = self.prev_time - tmp;
         let instruction = self.master_controller.tick(&mut self.world, time.as_float_secs());
+
+        let mut new_connection = self.get_new_connection();
+
+        while new_connection.is_some() {
+            match new_connection.unwrap() {
+                (conn, sender) => {
+                    self.view_channels.insert(conn.key.clone(), sender);
+                    self.world.connections.connections.push(conn);
+                }
+            }
+            new_connection = self.get_new_connection();
+        }
+
         match instruction {
             EngineInstruction::Run {
                 run_dispatcher
@@ -90,7 +120,15 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
             }
             _ => {}
         }
-        
+
+        // Get views
+        let mut view_ref = self.world.ecs_world.write_resource::<ViewMap>();
+        let mut views = ViewMap::new();
+        ::std::mem::swap(&mut *view_ref, &mut views);
+
+        for view in views {
+            self.view_channels.get_mut(&view.0).unwrap().send(view.1);
+        }
     }
 }
 
@@ -129,7 +167,10 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> EngineBuilder<'a, 'b, E> {
             master_controller: self.master_controller?,
             server_conf: self.server_conf,
             input_buffer: None,
-            prev_time: Instant::now()
+            prev_time: Instant::now(),
+            // These are both fake channels
+            connection_channel: channel().1,
+            view_channels: HashMap::new()
         };
         engine.init_resources();
         Some(engine)
