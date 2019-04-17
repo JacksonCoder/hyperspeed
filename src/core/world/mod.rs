@@ -4,7 +4,7 @@ mod mc;
 mod system;
 mod blueprint;
 
-pub use connection::ConnectionCollection;
+pub use connection::{ConnectionCollection, Connection, ClientView};
 pub use input::Input;
 pub use mc::{MasterController, EngineInstruction};
 pub use system::{SystemExecutor, SystemExecutorBuilder};
