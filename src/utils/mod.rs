@@ -41,3 +41,9 @@ pub type InputMap = HashMap<String, VecDeque<Input>>;
 pub type ReadInputMap<'a> = Read<'a, InputMap>;
 
 pub type WriteInputMap<'a> = Write<'a, InputMap>;
+
+pub type ViewMap = HashMap<String, ClientView>;
+
+pub type ReadViewMap<'a> = Read<'a, ViewMap>;
+
+pub type WriteViewMap<'a> = Write<'a, ViewMap>;
