@@ -5,10 +5,12 @@ pub struct ConnectionCollection {
 // Sharing connections can be hard, because both the ECS system and the server
 // need to read/write to the client views. In this case, the world's connection collection
 // is passed immutably to the server, which sends data to each respective channel.
+#[derive(Clone, Debug)]
 pub struct Connection {
     pub key: String
 }
 
+#[derive(Clone, Debug)]
 pub struct ClientView {
     pub data: String
 }
