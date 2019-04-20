@@ -10,9 +10,9 @@ pub struct Connection {
     pub key: String
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ClientView {
-    pub data: String
+    pub sprites: Vec<String>
 }
 
 impl ConnectionCollection {

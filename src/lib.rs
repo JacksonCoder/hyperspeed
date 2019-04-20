@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 #![feature(duration_float)]
-
+#![feature(trait_alias)]
 
 extern crate specs;
 
@@ -10,6 +10,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate bytes;
+extern crate serde_json;
 
 pub mod core;
 pub mod utils;

@@ -1,13 +1,15 @@
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::thread::{JoinHandle, spawn};
+use std::thread::{JoinHandle, spawn, sleep};
 use super::world::{Input, Connection, ClientView};
 use std::collections::{HashMap, VecDeque};
 use bytes::{BytesMut, BufMut};
 use std::ops::{Deref, DerefMut};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::mpsc::{Sender, channel, Receiver};
+use std::time::Duration;
+use crate::utils::StreamHandler;
 
 pub(crate) type InputBufferMutex = Arc<Mutex<PlayerInputBuffer>>;
 
@@ -19,8 +21,14 @@ pub(crate) struct PlayerInputBuffer {
     inner: HashMap<String, VecDeque<Input>>
 }
 
+pub struct StreamData {
+    pub login_key: String,
+    pub should_connect: bool
+}
+
 
 pub(crate) struct Server {
+    stream_handle: Box<StreamHandler>,
     tcp_listener: TcpListener,
     input_stream: InputBufferMutex,
     connection_channel: Sender<(Connection, Sender<ClientView>)>,
@@ -69,22 +77,32 @@ impl ServerConfig {
 }
 
 impl Server {
-    pub(crate) fn new(s: ServerConfig, c_sender: Sender<(Connection, Sender<ClientView>)>) -> Server {
+    pub(crate) fn new(s: ServerConfig, c_sender: Sender<(Connection, Sender<ClientView>)>, stream_handler: Box<StreamHandler>) -> Server {
         Server {
             tcp_listener: TcpListener::bind(format!("0.0.0.0:{}", s.port)).unwrap(),
             input_stream: Arc::new(Mutex::new(PlayerInputBuffer::new())),
-            connection_channel: c_sender
+            connection_channel: c_sender,
+            stream_handle: stream_handler
         }
     }
     pub(crate) fn main_loop(&mut self) {
         for stream in self.tcp_listener.incoming() {
-            let stream = stream.unwrap();
-            let mutex_clone = self.input_stream.clone();
-            let key = "asdf".to_string();
-            let (send, recv) = channel();
-            let conn = Connection { key: key.clone() };
-            self.connection_channel.send((conn, send));
-            spawn(move || stream_communicate(stream, recv, mutex_clone, key));
+            let mut stream = stream.unwrap();
+            let data = (*self.stream_handle)(&mut stream);
+            match data {
+                StreamData {
+                    login_key,
+                    should_connect
+                } => {
+                    if should_connect {
+                        let mutex_clone = self.input_stream.clone();
+                        let (send, recv) = channel();
+                        let conn = Connection { key: login_key.clone() };
+                        self.connection_channel.send((conn, send));
+                        spawn(move || stream_communicate(stream, recv, mutex_clone, login_key));
+                    }
+                }
+            }
         }
     }
     pub(crate) fn get_input_buffer(&self) -> Arc<Mutex<PlayerInputBuffer>> {
@@ -106,7 +124,6 @@ impl DerefMut for PlayerInputBuffer {
     }
 }
 
-const BUFFER_SIZE: usize = 512;
 
 fn find_stream_end_chars(msg: String) -> usize {
     let mut sequential_exclamations = 0;
@@ -129,12 +146,24 @@ fn put_buffer(input_buffer: &mut InputBufferMutex, player: String, input: Input)
     drop(lock);
 }
 
+fn get_new_view(receiver: &mut Receiver<ClientView>) -> Option<ClientView> {
+    match receiver.try_recv() {
+        Ok(V) => Some(V),
+        Err(E) => match E {
+            Empty => None,
+            _ => panic!("View channel was closed!")
+        }
+    }
+}
 
+// TODO: Refactor stream reading into its own function
 // A note on something that isn't super intuitive here: we close the stream
-// if we get an empty stream back. Why? Because this would be unexpected behavior
+// if we get an empty buffer back EMPTY_STREAM_PATIENCE number of times.
+// Why? Because this would be unexpected behavior
 // from the client and signifies that the socket has closed.
 const EMPTY_STREAM: [u8; 512] = [0; 512];
 const EMPTY_STREAM_PATIENCE: u32 = 2;
+const BUFFER_SIZE: usize = 512;
 fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientView>, mut input_m: Arc<Mutex<PlayerInputBuffer>>, key: String) {
     println!("Connection made!");
     let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
@@ -142,12 +171,29 @@ fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientVi
     let mut patience = EMPTY_STREAM_PATIENCE;
     stream.set_nonblocking(true);
     loop {
+        // send new data to the client
+        let mut view = get_new_view(&mut view_channel);
+        if view.is_some() {
+            // Get latest view
+            loop {
+                let mut tmp = get_new_view(&mut view_channel);
+                if tmp.is_some() {
+                    view = tmp;
+                } else {
+                    break;
+                }
+            }
+            // Update the client's view:
+            update_client_view(&mut stream, view);
+        }
         match stream.read(buffer.as_mut()) {
-            Ok(_) => {},
+            Ok(_) => {
+            },
             Err(e) => if e.kind() == std::io::ErrorKind::WouldBlock {
-                continue;
+                continue; // We'll repeat until the stream reads fully
             } else {
-                panic!("Stream is bad"); // TODO: Make sure this doesn't throw false positives
+                println!("Closing stream due to networking problem: {}", e);
+                return;
             }
         }
         if buffer.as_ref() == &EMPTY_STREAM[..] {
@@ -160,13 +206,31 @@ fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientVi
             }
         }
         patience = EMPTY_STREAM_PATIENCE; // This only is reached if the buffer was not empty
-        if buffer.len() > 0 {
-            let msg = String::from_utf8_lossy(buffer.as_ref());
-            let msg: String = msg.chars().take(find_stream_end_chars(msg.to_string())).collect();
-            println!("{}", msg);
-            if msg == "space" {
-                put_buffer(&mut input_m, key.clone(), Input::Key("Space".to_string()));
+        let msg = String::from_utf8_lossy(buffer.as_ref());
+        let msg: String = msg.chars().take(find_stream_end_chars(msg.to_string())).collect();
+        handle_msg(msg);
+    }
+}
+
+fn handle_msg(msg: String) {
+    println!("Handling message: {}", msg);
+}
+
+fn update_client_view(stream: &mut TcpStream, view: Option<ClientView>) {
+    if view.is_none() {
+        return;
+    }
+    // Serialize view
+    let ser_view = serde_json::to_string(&view.unwrap()).unwrap() + "\n";
+    loop {
+        match stream.write(ser_view.as_bytes()) {
+            Ok(_) => break,
+            Err(e) => if e.kind() == std::io::ErrorKind::WouldBlock {
+                continue;
+            } else {
+                panic!("Socket failed");
             }
         }
     }
+    stream.flush();
 }

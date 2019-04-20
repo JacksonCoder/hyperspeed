@@ -13,6 +13,8 @@ use specs::Component;
 use super::server::InputBufferMutex;
 use std::time::Instant;
 use crate::core::world::Connection;
+use crate::core::server::StreamData;
+use std::net::TcpStream;
 
 pub struct Engine<'a, 'b, E: Sync + Send + Clone + 'static> {
     pub world: World<'a, 'b>,
@@ -21,13 +23,15 @@ pub struct Engine<'a, 'b, E: Sync + Send + Clone + 'static> {
     server_conf: ServerConfig,
     prev_time: Instant,
     connection_channel: Receiver<(Connection, Sender<ClientView>)>,
-    view_channels: HashMap<String, Sender<ClientView>>
+    view_channels: HashMap<String, Sender<ClientView>>,
+    server_stream_handler: Option<Box<StreamHandler>>
 }
 
 pub struct EngineBuilder<'a, 'b, E: Sync + Send + Clone + 'static> {
     server_conf: ServerConfig,
     system_executor_builder: SystemExecutorBuilder<'a, 'b>,
     master_controller: Option<Box<MasterController<ObserverEvent=E>>>,
+    server_stream_handler: Option<Box<StreamHandler>>
 }
 
 impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
@@ -36,6 +40,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
             server_conf: ServerConfig::new(),
             system_executor_builder: SystemExecutor::new(),
             master_controller: None,
+            server_stream_handler: None
         }
     }
 
@@ -53,7 +58,14 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
 
     pub fn start_server(&mut self) {
         let (sender, reciever) = channel();
-        let mut server = Server::new(self.server_conf.clone(), sender);
+        let mut handler = None;
+        ::std::mem::swap(&mut self.server_stream_handler, &mut handler);
+        let handler = handler
+            .unwrap_or(Box::new(|_| StreamData {
+                login_key: "default_key".to_string(),
+                should_connect: true
+            }));
+        let mut server = Server::new(self.server_conf.clone(), sender, handler);
         self.connection_channel = reciever;
         self.input_buffer = Some(server.get_input_buffer()); // Get a reference to the input buffer even after it gets moved to another thread
         spawn(move || server.main_loop());
@@ -98,6 +110,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         let mut new_connection = self.get_new_connection();
 
         while new_connection.is_some() {
+            println!("Processing new connection!");
             match new_connection.unwrap() {
                 (conn, sender) => {
                     self.view_channels.insert(conn.key.clone(), sender);
@@ -125,7 +138,6 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         let mut view_ref = self.world.ecs_world.write_resource::<ViewMap>();
         let mut views = ViewMap::new();
         ::std::mem::swap(&mut *view_ref, &mut views);
-
         for view in views {
             self.view_channels.get_mut(&view.0).unwrap().send(view.1);
         }
@@ -156,6 +168,12 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> EngineBuilder<'a, 'b, E> {
         self.master_controller = Some(Box::new(master_controller));
         self
     }
+    pub fn with_stream_handler<F: 'static>(mut self, handler: F) -> Self
+    where
+        F: StreamHandler {
+        self.server_stream_handler = Some(Box::new(handler));
+        self
+    }
     
     pub fn build(mut self) -> Option<Engine<'a, 'b, E>> {
         let mut engine = Engine {
@@ -170,7 +188,8 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> EngineBuilder<'a, 'b, E> {
             prev_time: Instant::now(),
             // These are both fake channels
             connection_channel: channel().1,
-            view_channels: HashMap::new()
+            view_channels: HashMap::new(),
+            server_stream_handler: self.server_stream_handler
         };
         engine.init_resources();
         Some(engine)

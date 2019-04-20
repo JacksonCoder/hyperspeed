@@ -6,4 +6,6 @@ pub use engine::*;
 
 use server::*;
 
+pub use server::StreamData;
+
 pub use world::*;

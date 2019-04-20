@@ -2,6 +2,8 @@ use super::*;
 use super::core::*;
 use std::collections::{HashMap, VecDeque};
 
+use std::net::TcpStream;
+
 // This is a comprehensive utility function collection to make your
 // Hyperspeed code look nicer.
 
@@ -27,6 +29,9 @@ macro_rules! register_components {
         )+
     };
 }
+
+// Closure types
+pub trait StreamHandler = Fn(&mut TcpStream) -> StreamData + Send;
 
 // Resource fetching
 
