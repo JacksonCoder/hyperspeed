@@ -1,3 +1,4 @@
+#[derive(Clone, Debug)]
 pub struct ConnectionCollection {
     pub connections: Vec<Connection>
 }
@@ -12,7 +13,8 @@ pub struct Connection {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ClientView {
-    pub sprites: Vec<String>
+    pub sprites: Vec<String>,
+    pub loc: Vec<(f32, f32)>
 }
 
 impl ConnectionCollection {
