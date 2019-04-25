@@ -213,7 +213,7 @@ fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientVi
 }
 
 fn handle_msg(msg: String) {
-    println!("Handling message: {}", msg);
+    // TODO: Impl msg parsing
 }
 
 fn update_client_view(stream: &mut TcpStream, view: Option<ClientView>) {
