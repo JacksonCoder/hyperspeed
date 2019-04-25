@@ -52,3 +52,5 @@ pub type ViewMap = HashMap<String, ClientView>;
 pub type ReadViewMap<'a> = Read<'a, ViewMap>;
 
 pub type WriteViewMap<'a> = Write<'a, ViewMap>;
+
+pub type ReadConnections<'a> = Read<'a, ConnectionCollection>;
