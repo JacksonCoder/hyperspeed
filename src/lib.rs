@@ -17,7 +17,8 @@ pub mod utils;
 pub mod systems;
 pub mod components;
 
-pub use specs::prelude::{Write, Dispatcher, System, Component, VecStorage, Entities, WriteStorage, ReadStorage, Read, Entity, Join};
+pub use specs::prelude::*;
+pub use specs::prelude::World as SpecsWorld;
 
 pub use ::core::*;
 
