@@ -49,6 +49,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         self.world.ecs_world.add_resource(Messages::<E>::new());
         self.world.ecs_world.add_resource(InputMap::new());
         self.world.ecs_world.add_resource(ViewMap::new());
+        self.world.ecs_world.add_resource(ConnectionCollection::new());
     }
 
     pub fn register<T: Component>(&mut self)
@@ -58,16 +59,23 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
 
     pub fn start_server(&mut self) {
         let (sender, reciever) = channel();
+
         let mut handler = None;
+
         ::std::mem::swap(&mut self.server_stream_handler, &mut handler);
+
         let handler = handler
             .unwrap_or(Box::new(|_| StreamData {
                 login_key: "default_key".to_string(),
                 should_connect: true
             }));
+
         let mut server = Server::new(self.server_conf.clone(), sender, handler);
+
         self.connection_channel = reciever;
+
         self.input_buffer = Some(server.get_input_buffer()); // Get a reference to the input buffer even after it gets moved to another thread
+
         spawn(move || server.main_loop());
 
         self.prev_time = Instant::now();
@@ -95,7 +103,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
                 input_map
             }
             _ => {
-                panic!("Oh no! The input buffer mutex was poisoned!");
+                panic!("The input buffer mutex was poisoned!");
             }
         }
 
@@ -120,6 +128,9 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
             new_connection = self.get_new_connection();
         }
 
+        // Send connections to world
+        self.world.ecs_world.add_resource(self.world.connections.clone());
+
         match instruction {
             EngineInstruction::Run {
                 run_dispatcher
@@ -137,10 +148,31 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         // Get views
         let mut view_ref = self.world.ecs_world.write_resource::<ViewMap>();
         let mut views = ViewMap::new();
+        // Swap views
         ::std::mem::swap(&mut *view_ref, &mut views);
-        for view in views {
-            self.view_channels.get_mut(&view.0).unwrap().send(view.1);
+        drop(view_ref);
+        // Send views through view channels
+        for (key, view) in views {
+            match self.view_channels.get_mut(&key) {
+                Some(channel) => {
+                    match channel.send(view) {
+                            Ok(_) => {},
+                            Err(_) => {
+                            println!("Engine detects client stream thread has exited. Deleting connection.");
+                            self.view_channels.remove(&key); // TODO: Remove connection
+                            self.remove_connection(&key);
+                        }
+                    }
+                },
+                None => {
+                    // The view channel does not exist, but it could be initialised later. So we do nothing here.
+                }
+            }
         }
+    }
+
+    fn remove_connection(&mut self, key: &String) {
+        self.world.connections.connections.retain(|x| x.key != *key);
     }
 }
 
@@ -186,7 +218,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> EngineBuilder<'a, 'b, E> {
             server_conf: self.server_conf,
             input_buffer: None,
             prev_time: Instant::now(),
-            // These are both fake channels
+            // This is a fake channel
             connection_channel: channel().1,
             view_channels: HashMap::new(),
             server_stream_handler: self.server_stream_handler
