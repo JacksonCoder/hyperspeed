@@ -4,6 +4,9 @@ use std::collections::{HashMap, VecDeque};
 
 use std::net::TcpStream;
 
+mod server;
+pub use server::*;
+
 // This is a comprehensive utility function collection to make your
 // Hyperspeed code look nicer.
 
@@ -31,7 +34,8 @@ macro_rules! register_components {
 }
 
 // Closure types
-pub trait StreamHandler = Fn(&mut TcpStream) -> StreamData + Send;
+
+pub type StreamHandler = fn(&mut TcpStream) -> StreamData;
 
 // Resource fetching
 
@@ -54,3 +58,5 @@ pub type ReadViewMap<'a> = Read<'a, ViewMap>;
 pub type WriteViewMap<'a> = Write<'a, ViewMap>;
 
 pub type ReadConnections<'a> = Read<'a, ConnectionCollection>;
+
+pub type WriteConnections<'a> = Write<'a, ConnectionCollection>;

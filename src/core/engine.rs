@@ -24,14 +24,14 @@ pub struct Engine<'a, 'b, E: Sync + Send + Clone + 'static> {
     prev_time: Instant,
     connection_channel: Receiver<(Connection, Sender<ClientView>)>,
     view_channels: HashMap<String, Sender<ClientView>>,
-    server_stream_handler: Option<Box<StreamHandler>>
+    server_stream_handler: Option<StreamHandler>
 }
 
 pub struct EngineBuilder<'a, 'b, E: Sync + Send + Clone + 'static> {
     server_conf: ServerConfig,
     system_executor_builder: SystemExecutorBuilder<'a, 'b>,
     master_controller: Option<Box<MasterController<ObserverEvent=E>>>,
-    server_stream_handler: Option<Box<StreamHandler>>
+    server_stream_handler: Option<StreamHandler>
 }
 
 impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
@@ -58,6 +58,14 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
     }
 
     pub fn start_server(&mut self) {
+        fn default(t: &mut TcpStream) -> StreamData {
+            StreamData {
+                login_key: "default_key".to_string(),
+                should_connect: true
+            }
+        }
+
+
         let (sender, reciever) = channel();
 
         let mut handler = None;
@@ -65,10 +73,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         ::std::mem::swap(&mut self.server_stream_handler, &mut handler);
 
         let handler = handler
-            .unwrap_or(Box::new(|_| StreamData {
-                login_key: "default_key".to_string(),
-                should_connect: true
-            }));
+            .unwrap_or(default);
 
         let mut server = Server::new(self.server_conf.clone(), sender, handler);
 
@@ -76,7 +81,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
 
         self.input_buffer = Some(server.get_input_buffer()); // Get a reference to the input buffer even after it gets moved to another thread
 
-        spawn(move || server.main_loop());
+        spawn( move || server.main_loop());
 
         self.prev_time = Instant::now();
 
@@ -122,14 +127,15 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
             match new_connection.unwrap() {
                 (conn, sender) => {
                     self.view_channels.insert(conn.key.clone(), sender);
-                    self.world.connections.connections.push(conn);
+                    self.world.connections.push(conn);
                 }
             }
             new_connection = self.get_new_connection();
         }
 
-        // Send connections to world
-        self.world.ecs_world.add_resource(self.world.connections.clone());
+        let mut conn_ref = self.world.ecs_world.write_resource::<ConnectionCollection>();
+        ::std::mem::swap(&mut *conn_ref, &mut self.world.connections);
+        drop(conn_ref);
 
         match instruction {
             EngineInstruction::Run {
@@ -172,7 +178,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
     }
 
     fn remove_connection(&mut self, key: &String) {
-        self.world.connections.connections.retain(|x| x.key != *key);
+        self.world.connections.remove(key);
     }
 }
 
@@ -200,10 +206,8 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> EngineBuilder<'a, 'b, E> {
         self.master_controller = Some(Box::new(master_controller));
         self
     }
-    pub fn with_stream_handler<F: 'static>(mut self, handler: F) -> Self
-    where
-        F: StreamHandler {
-        self.server_stream_handler = Some(Box::new(handler));
+    pub fn with_stream_handler(mut self, handler: StreamHandler) -> Self {
+        self.server_stream_handler = Some(handler);
         self
     }
     

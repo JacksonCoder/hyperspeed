@@ -10,6 +10,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc::{Sender, channel, Receiver};
 use std::time::Duration;
 use crate::utils::StreamHandler;
+use crate::utils::find_stream_end_chars;
 
 pub(crate) type InputBufferMutex = Arc<Mutex<PlayerInputBuffer>>;
 
@@ -28,7 +29,7 @@ pub struct StreamData {
 
 
 pub(crate) struct Server {
-    stream_handle: Box<StreamHandler>,
+    stream_handle: StreamHandler,
     tcp_listener: TcpListener,
     input_stream: InputBufferMutex,
     connection_channel: Sender<(Connection, Sender<ClientView>)>,
@@ -77,7 +78,7 @@ impl ServerConfig {
 }
 
 impl Server {
-    pub(crate) fn new(s: ServerConfig, c_sender: Sender<(Connection, Sender<ClientView>)>, stream_handler: Box<StreamHandler>) -> Server {
+    pub(crate) fn new(s: ServerConfig, c_sender: Sender<(Connection, Sender<ClientView>)>, stream_handler: StreamHandler) -> Server {
         Server {
             tcp_listener: TcpListener::bind(format!("0.0.0.0:{}", s.port)).unwrap(),
             input_stream: Arc::new(Mutex::new(PlayerInputBuffer::new())),
@@ -88,7 +89,7 @@ impl Server {
     pub(crate) fn main_loop(&mut self) {
         for stream in self.tcp_listener.incoming() {
             let mut stream = stream.unwrap();
-            let data = (*self.stream_handle)(&mut stream);
+            let data = (self.stream_handle)(&mut stream);
             match data {
                 StreamData {
                     login_key,
@@ -122,22 +123,6 @@ impl DerefMut for PlayerInputBuffer {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
-}
-
-
-fn find_stream_end_chars(msg: String) -> usize {
-    let mut sequential_exclamations = 0;
-    for character in msg.chars().rev() {
-        if character == '!' {
-            sequential_exclamations += 1;
-        } else {
-            sequential_exclamations = 0;
-        }
-        if sequential_exclamations >= 3 {
-            return msg.find(character).unwrap();
-        }
-    }
-    return 0;
 }
 
 fn put_buffer(input_buffer: &mut InputBufferMutex, player: String, input: Input) {
