@@ -4,8 +4,7 @@ use std::collections::{HashMap, VecDeque};
 
 use std::net::TcpStream;
 
-mod server;
-pub use server::*;
+pub mod server;
 
 // This is a comprehensive utility function collection to make your
 // Hyperspeed code look nicer.

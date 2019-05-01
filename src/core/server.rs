@@ -9,22 +9,50 @@ use std::ops::{Deref, DerefMut};
 use std::io::{Read, Write};
 use std::sync::mpsc::{Sender, channel, Receiver};
 use std::time::Duration;
+use crate::utils::server::*;
 use crate::utils::StreamHandler;
-use crate::utils::find_stream_end_chars;
 
 pub(crate) type InputBufferMutex = Arc<Mutex<PlayerInputBuffer>>;
-
-struct Message {
-
-}
 
 pub(crate) struct PlayerInputBuffer {
     inner: HashMap<String, VecDeque<Input>>
 }
 
+#[derive(Clone)]
 pub struct StreamData {
-    pub login_key: String,
-    pub should_connect: bool
+    login_key: String,
+    should_connect: bool
+}
+
+impl StreamData {
+    pub fn should_connect(&self) -> bool {
+        self.should_connect
+    }
+
+    pub fn login_key(&self) -> String {
+        self.login_key.clone()
+    }
+
+    pub fn do_connect(login_key: String) -> Self {
+        StreamData {
+            login_key,
+            should_connect: true
+        }
+    }
+
+    pub fn do_connect_str(login_key: &str) -> Self {
+        StreamData {
+            login_key: login_key.to_string(),
+            should_connect: true
+        }
+    }
+
+    pub fn dont_connect() -> Self {
+        StreamData {
+            login_key: "".to_string(),
+            should_connect: false
+        }
+    }
 }
 
 
@@ -141,19 +169,11 @@ fn get_new_view(receiver: &mut Receiver<ClientView>) -> Option<ClientView> {
     }
 }
 
-// TODO: Refactor stream reading into its own function
-// A note on something that isn't super intuitive here: we close the stream
-// if we get an empty buffer back EMPTY_STREAM_PATIENCE number of times.
-// Why? Because this would be unexpected behavior
-// from the client and signifies that the socket has closed.
-const EMPTY_STREAM: [u8; 512] = [0; 512];
-const EMPTY_STREAM_PATIENCE: u32 = 2;
 const BUFFER_SIZE: usize = 512;
 fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientView>, mut input_m: Arc<Mutex<PlayerInputBuffer>>, key: String) {
     println!("Connection made!");
     let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
     buffer.put(&[0; BUFFER_SIZE][..]);
-    let mut patience = EMPTY_STREAM_PATIENCE;
     stream.set_nonblocking(true);
     loop {
         // send new data to the client
@@ -169,53 +189,22 @@ fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientVi
                 }
             }
             // Update the client's view:
-            update_client_view(&mut stream, view);
+            send_view_to_stream(&mut stream, view.unwrap());
         }
-        match stream.read(buffer.as_mut()) {
-            Ok(_) => {
-            },
-            Err(e) => if e.kind() == std::io::ErrorKind::WouldBlock {
-                continue; // We'll repeat until the stream reads fully
-            } else {
-                println!("Closing stream due to networking problem: {}", e);
+
+        use self::StreamReadResult::*;
+        match read_from_message_from_stream_nonblocking(&mut stream, &mut buffer) {
+            ValidMessage(s) => handle_msg(s),
+            InvalidMessage => println!("Invalid message from client!"),
+            NotReady => continue,
+            StreamError(e) => {
+                println!("The stream has been closed and the client thread is exiting due to an error: {}", e);
                 return;
             }
         }
-        if buffer.as_ref() == &EMPTY_STREAM[..] {
-            if patience < 1 {
-                println!("Closing connection to client"); // TODO: Make it specific
-                return;
-            } else {
-                patience -= 1;
-                continue;
-            }
-        }
-        patience = EMPTY_STREAM_PATIENCE; // This only is reached if the buffer was not empty
-        let msg = String::from_utf8_lossy(buffer.as_ref());
-        let msg: String = msg.chars().take(find_stream_end_chars(msg.to_string())).collect();
-        handle_msg(msg);
     }
 }
 
 fn handle_msg(msg: String) {
     // TODO: Impl msg parsing
-}
-
-fn update_client_view(stream: &mut TcpStream, view: Option<ClientView>) {
-    if view.is_none() {
-        return;
-    }
-    // Serialize view
-    let ser_view = serde_json::to_string(&view.unwrap()).unwrap() + "\n";
-    loop {
-        match stream.write(ser_view.as_bytes()) {
-            Ok(_) => break,
-            Err(e) => if e.kind() == std::io::ErrorKind::WouldBlock {
-                continue;
-            } else {
-                panic!("Socket failed");
-            }
-        }
-    }
-    stream.flush();
 }

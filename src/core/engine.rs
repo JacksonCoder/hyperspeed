@@ -59,10 +59,7 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
 
     pub fn start_server(&mut self) {
         fn default(t: &mut TcpStream) -> StreamData {
-            StreamData {
-                login_key: "default_key".to_string(),
-                should_connect: true
-            }
+            StreamData::do_connect_str("default_key")
         }
 
 
