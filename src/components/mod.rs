@@ -4,24 +4,24 @@ pub type ZLevelID = &'static str;
 pub type SpriteID = u64;
 
 pub struct Position {
-    x: f32,
-    y: f32,
+    pub x: f32,
+    pub y: f32,
     z_level: ZLevelID
 }
 
 pub struct Visible {
-    sprite: SpriteID
+    pub sprite: SpriteID
 }
 
 pub struct PositionTiled {
-    x: u32,
-    y: u32,
-    z_level: ZLevelID
+    pub x: u32,
+    pub y: u32,
+    pub z_level: ZLevelID
 }
 
 pub struct Camera {
-    view_range: u16,
-    offset: (u32, u32)
+    pub view_range: u16,
+    pub offset: (u32, u32)
 }
 
 define_component!(Position);
