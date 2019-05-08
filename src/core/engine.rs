@@ -15,6 +15,7 @@ use std::time::Instant;
 use crate::core::world::Connection;
 use crate::core::server::StreamData;
 use std::net::TcpStream;
+use crate::components::{Position, Camera, Visible};
 
 pub struct Engine<'a, 'b, E: Sync + Send + Clone + 'static> {
     pub world: World<'a, 'b>,
@@ -50,6 +51,12 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
         self.world.ecs_world.add_resource(InputMap::new());
         self.world.ecs_world.add_resource(ViewMap::new());
         self.world.ecs_world.add_resource(ConnectionCollection::new());
+
+        // Register default components
+
+        self.world.ecs_world.register::<Position>();
+        self.world.ecs_world.register::<Visible>();
+        self.world.ecs_world.register::<Camera>();
     }
 
     pub fn register<T: Component>(&mut self)
