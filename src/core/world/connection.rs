@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 #[derive(Clone, Debug, Default)]
 pub struct ConnectionCollection {
     new_keys: VecDeque<String>,
-    connections: Vec<Connection>
+    pub connections: Vec<Connection>
 }
 
 // Sharing connections can be hard, because both the ECS system and the server
@@ -16,7 +16,7 @@ pub struct Connection {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ClientView {
-    pub sprites: Vec<String>,
+    pub sprites: Vec<u64>,
     pub loc: Vec<(f32, f32)>
 }
 
@@ -57,5 +57,14 @@ impl ConnectionCollection {
     pub fn push(&mut self, c: Connection) {
         self.new_keys.push_back(c.key.clone());
         self.connections.push(c);
+    }
+}
+
+impl ClientView {
+    pub fn new() -> Self {
+        ClientView {
+            sprites: vec!(),
+            loc: vec!()
+        }
     }
 }

@@ -3,6 +3,10 @@
 #![feature(trait_alias)]
 
 extern crate specs;
+#[macro_use]
+extern crate shred_derive;
+#[macro_use]
+extern crate specs_derive;
 
 #[macro_use]
 extern crate cascade;
@@ -18,8 +22,7 @@ pub mod systems;
 pub mod components;
 
 pub use specs::prelude::*;
-pub use specs::prelude::World as SpecsWorld;
 
-pub use ::core::*;
+pub use self::core::*;
 
 pub use self::utils::*;
