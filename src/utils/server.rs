@@ -3,8 +3,10 @@ use bytes::{BufMut, BytesMut};
 use std::io::{Read, ErrorKind, Write};
 use crate::core::ClientView;
 
-pub struct Message {
-
+#[derive(Deserialize)]
+pub struct InputMessage {
+    pub keys: Vec<char>,
+    pub clicks: Vec<(u32, u32)>
 }
 
 fn find_stream_end_chars(msg: String) -> usize {

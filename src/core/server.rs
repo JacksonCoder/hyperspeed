@@ -170,7 +170,7 @@ fn get_new_view(receiver: &mut Receiver<ClientView>) -> Option<ClientView> {
 }
 
 const BUFFER_SIZE: usize = 512;
-fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientView>, mut input_m: Arc<Mutex<PlayerInputBuffer>>, key: String) {
+fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientView>, mut input_m: InputBufferMutex, key: String) {
     println!("Connection made!");
     let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
     buffer.put(&[0; BUFFER_SIZE][..]);
@@ -194,7 +194,7 @@ fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientVi
 
         use self::StreamReadResult::*;
         match read_from_message_from_stream_nonblocking(&mut stream, &mut buffer) {
-            ValidMessage(s) => handle_msg(s),
+            ValidMessage(s) => handle_msg(s, &mut input_m),
             InvalidMessage => println!("Invalid message from client!"),
             NotReady => continue,
             StreamError(e) => {
@@ -205,6 +205,16 @@ fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientVi
     }
 }
 
-fn handle_msg(msg: String) {
-    // TODO: Impl msg parsing
+fn handle_msg(msg: String, mut input_m: &mut InputBufferMutex) {
+    println!("{}", msg);
+    let msg = serde_json::from_str(msg.as_str());
+    match msg {
+        Ok(InputMessage {
+                clicks,
+            keys
+             }) => {
+            println!("{:?}", clicks);
+        },
+        Err(_) => ()
+    }
 }
