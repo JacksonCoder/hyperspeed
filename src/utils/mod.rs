@@ -6,6 +6,8 @@ use std::net::TcpStream;
 
 pub mod server;
 
+pub mod blueprint;
+
 // This is a comprehensive utility function collection to make your
 // Hyperspeed code look nicer.
 
