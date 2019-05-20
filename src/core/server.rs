@@ -10,6 +10,7 @@ use bytes::{BytesMut, BufMut};
 use super::*;
 use crate::utils::*;
 use crate::utils::server::*;
+use crate::core::input::Input;
 
 pub(crate) type InputBufferMutex = Arc<Mutex<PlayerInputBuffer>>;
 
@@ -20,7 +21,7 @@ pub(crate) struct PlayerInputBuffer {
 #[derive(Clone)]
 pub struct StreamData {
     login_key: String,
-    should_connect: bool
+    should_connect: bool,
 }
 
 impl StreamData {
@@ -35,21 +36,21 @@ impl StreamData {
     pub fn do_connect(login_key: String) -> Self {
         StreamData {
             login_key,
-            should_connect: true
+            should_connect: true,
         }
     }
 
     pub fn do_connect_str(login_key: &str) -> Self {
         StreamData {
             login_key: login_key.to_string(),
-            should_connect: true
+            should_connect: true,
         }
     }
 
     pub fn dont_connect() -> Self {
         StreamData {
             login_key: "".to_string(),
-            should_connect: false
+            should_connect: false,
         }
     }
 }
@@ -65,7 +66,7 @@ pub(crate) struct Server {
 #[derive(Clone)]
 pub(crate) struct ServerConfig {
     pub port: u16,
-    pub server_name: String
+    pub server_name: String,
 }
 
 impl PlayerInputBuffer {
@@ -99,7 +100,7 @@ impl ServerConfig {
     pub fn new() -> Self {
         ServerConfig {
             port: 1212, // the default port for Hyperspeed
-            server_name: "default_name".to_string()
+            server_name: "default_name".to_string(),
         }
     }
 }
@@ -110,7 +111,7 @@ impl Server {
             tcp_listener: TcpListener::bind(format!("0.0.0.0:{}", s.port)).unwrap(),
             input_stream: Arc::new(Mutex::new(PlayerInputBuffer::new())),
             connection_channel: c_sender,
-            stream_handle: stream_handler
+            stream_handle: stream_handler,
         }
     }
     pub(crate) fn main_loop(&mut self) {
@@ -169,6 +170,7 @@ fn get_new_view(receiver: &mut Receiver<ClientView>) -> Option<ClientView> {
 }
 
 const BUFFER_SIZE: usize = 512;
+
 fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientView>, mut input_m: InputBufferMutex, key: String) {
     println!("Connection made!");
     let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
@@ -193,7 +195,7 @@ fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientVi
 
         use self::StreamReadResult::*;
         match read_from_message_from_stream_nonblocking(&mut stream, &mut buffer) {
-            ValidMessage(s) => handle_msg(s, &mut input_m),
+            ValidMessage(s) => handle_msg(s, input_m.clone(), &key),
             InvalidMessage => println!("Invalid message from client!"),
             NotReady => continue,
             StreamError(e) => {
@@ -204,16 +206,29 @@ fn stream_communicate(mut stream: TcpStream, mut view_channel: Receiver<ClientVi
     }
 }
 
-fn handle_msg(msg: String, mut input_m: &mut InputBufferMutex) {
-    println!("{}", msg);
+fn handle_msg(msg: String, mut input_m: InputBufferMutex, key: &String) {
     let msg = serde_json::from_str(msg.as_str());
     match msg {
         Ok(InputMessage {
-                clicks,
-            keys
-             }) => {
-            println!("{:?}", clicks);
-        },
+               clicks,
+               keys
+           }) => {
+            let mut click_vec = cascade! {
+                    new_clicks: Vec::new();
+                    | for c in clicks {
+                        new_clicks.push(Input::Click {x: c.0, y: c.1});
+                    };
+                };
+            let mut key_vec = cascade! {
+                    new_keys: Vec::new();
+                    | for k in keys {
+                        new_keys.push(Input::Key(k));
+                    };
+                };
+            click_vec.append(&mut key_vec);
+            let mut lock = input_m.lock().unwrap();
+            lock.insert(key.clone(), click_vec.into());
+        }
         Err(_) => ()
     }
 }

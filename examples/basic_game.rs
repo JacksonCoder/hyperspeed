@@ -1,9 +1,7 @@
 extern crate hyperspeed;
 
-use hyperspeed::{System, WriteStorage, ReadStorage,
-                 Read, WriteViewMap, Entities, WriteConnections,
-                 define_component, Component, VecStorage, Join};
-use hyperspeed::core::{World, Engine, MasterController, EngineInstruction, ClientView, StreamData};
+use hyperspeed::{System, WriteStorage, ReadStorage, Read, WriteViewMap, Entities, WriteConnections, define_component, Component, VecStorage, Join, ReadInputMap};
+use hyperspeed::core::{World, Engine, EngineInstruction, ClientView, StreamData, Subsystem, RunData, key_pressed_for};
 
 use std::thread::sleep;
 use std::time::Duration;
@@ -29,8 +27,8 @@ struct PlayerControllable {
 
 define_component!(PlayerControllable);
 
-fn start_game(world: &mut World) -> bool {
-    if world.connections.size() < 2 {
+fn start_game(world: &mut World<Message>) -> bool {
+    if world.get_connections().size() < 2 {
         println!("We can't start the game yet!");
         return false;
     }
@@ -41,11 +39,16 @@ fn start_game(world: &mut World) -> bool {
 struct MoveSystem {}
 
 impl<'a> System<'a> for MoveSystem {
-    type SystemData = WriteStorage<'a, Position>;
+    type SystemData = (ReadStorage<'a, PlayerControllable>, WriteStorage<'a, Position>, ReadInputMap<'a>);
 
-    fn run(&mut self, mut pos: Self::SystemData) {
-        for mut p in (&mut pos).join() {
-            p.x += 0.1;
+    fn run(&mut self, (players, mut pos, input_m): Self::SystemData) {
+        for (player, mut pos) in (&players, &mut pos).join() {
+            if key_pressed_for(&input_m, &player.player_key, 'd') {
+                pos.x += 10.0;
+            }
+            if key_pressed_for(&input_m, &player.player_key, 'a') {
+                pos.x -= 10.0;
+            }
         }
     }
 }
@@ -90,26 +93,25 @@ impl<'a> System<'a> for RenderSystem {
     }
 }
 
-struct MC {}
+struct SS {}
 
-impl MasterController for MC {
-    type ObserverEvent = Message;
+impl Subsystem for SS {
+    type MessageType = Message;
 
-    fn start(&mut self, world: &mut World, dt: f64) {
-
-    }
-
-    fn tick(&mut self, world: &mut World, dt: f64) -> EngineInstruction {
+    fn tick(&mut self, world: &mut World<Self::MessageType>, dt: f64) -> EngineInstruction {
         // Regulate ticks
         sleep(Duration::from_millis(20));
-        if world.connections.size() > 0 {
-            world.ecs_world.add_resource(true);
+        if world.get_connections().size() > 0 {
+            world.get_world_mut().add_resource(true);
         } else {
-            world.ecs_world.add_resource(false);
+            world.get_world_mut().add_resource(false);
         }
-        EngineInstruction::Run {
-            run_dispatcher: true
-        }
+        EngineInstruction::Run (
+            RunData {
+                run_dispatcher: true
+            },
+            1
+        )
     }
 }
 
@@ -134,7 +136,7 @@ enum Message {
 }
 
 fn main() {
-    let mut engine = Engine::<Message>::new().with_mc(MC {})
+    let mut engine = Engine::<Message>::new().with_subsystem(SS {})
         .with_system(ConnectionSystem {}, "c", &[])
         .with_system(MoveSystem {}, "m", &["c"])
         .with_system(RenderSystem {}, "render", &["c", "m"])

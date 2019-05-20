@@ -12,6 +12,6 @@ pub use server::StreamData;
 
 pub use world::*;
 
-pub use input::Input;
+pub use input::*;
 
 pub use subsystem::{Subsystem, EngineInstruction, RunData};
