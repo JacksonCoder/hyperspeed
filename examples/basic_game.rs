@@ -1,6 +1,6 @@
 extern crate hyperspeed;
 
-use hyperspeed::{System, WriteStorage, ReadStorage, Read, WriteViewMap, Entities, WriteConnections, define_component, Component, VecStorage, Join, ReadInputMap};
+use hyperspeed::{System, WriteStorage, ReadStorage, Read, WriteViewMap, Entities, WriteConnections, define_component, Component, VecStorage, Join, ReadInputMap, WriteMessages, ReadMessages};
 use hyperspeed::core::{World, Engine, EngineInstruction, ClientView, StreamData, Subsystem, RunData, key_pressed_for};
 
 use std::thread::sleep;
@@ -12,6 +12,7 @@ use specs::world::EntitiesRes;
 use hyperspeed::utils::server::read_message_from_stream;
 use hyperspeed::utils::server::StreamReadResult::{ValidMessage, StreamError, InvalidMessage};
 use hyperspeed::components::Visible;
+use specs::join::JoinIter;
 
 
 struct Position {
@@ -39,23 +40,70 @@ fn start_game(world: &mut World<Message>) -> bool {
 struct MoveSystem {}
 
 impl<'a> System<'a> for MoveSystem {
-    type SystemData = (ReadStorage<'a, PlayerControllable>, WriteStorage<'a, Position>, ReadInputMap<'a>);
+    type SystemData = (ReadStorage<'a, PlayerControllable>, WriteStorage<'a, Position>, ReadMessages<'a, Message>);
 
-    fn run(&mut self, (players, mut pos, input_m): Self::SystemData) {
-        for (player, mut pos) in (&players, &mut pos).join() {
-            if key_pressed_for(&input_m, &player.player_key, 'd') {
-                pos.x += 10.0;
-            }
-            if key_pressed_for(&input_m, &player.player_key, 'a') {
-                pos.x -= 10.0;
+    fn run(&mut self, (players, mut pos, messages): Self::SystemData) {
+        use Message::*;
+        for message in &*messages {
+            match message {
+                Up(ref key) => {
+                    for (player, pos) in (&players, &mut pos).join() {
+                        if player.player_key == *key {
+                            pos.y += 0.1;
+                        }
+                    }
+                }
+                Down(ref key) => {
+                    for (player, pos) in (&players, &mut pos).join() {
+                        if player.player_key == *key {
+                            pos.y -= 0.1;
+                        }
+                    }
+                }
+                Left(ref key) => {
+                    for (player, pos) in (&players, &mut pos).join() {
+                        if player.player_key == *key {
+                            pos.x -= 0.1;
+                        }
+                    }
+                }
+                Right(ref key) => {
+                    for (player, pos) in (&players, &mut pos).join() {
+                        if player.player_key == *key {
+                            pos.x += 0.1;
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-struct ConnectionSystem {
+struct InputSystem {}
 
+impl<'a> System<'a> for InputSystem {
+    type SystemData = (ReadInputMap<'a>, WriteMessages<'a, Message>);
+
+    fn run(&mut self, (input, mut messages): Self::SystemData) {
+        // Generate moves for players.
+        for key in input.keys() {
+            if key_pressed_for(&input, key, 'w') {
+                messages.push(Message::Up(key.clone()));
+            }
+            if key_pressed_for(&input, key, 'a') {
+                messages.push(Message::Left(key.clone()));
+            }
+            if key_pressed_for(&input, key, 's') {
+                messages.push(Message::Down(key.clone()));
+            }
+            if key_pressed_for(&input, key, 'd') {
+                messages.push(Message::Right(key.clone()));
+            }
+        }
+    }
 }
+
+struct ConnectionSystem {}
 
 impl<'a> System<'a> for ConnectionSystem {
     type SystemData = (Entities<'a>, WriteConnections<'a>, WriteStorage<'a, Position>, WriteStorage<'a, PlayerControllable>, WriteStorage<'a, Visible>);
@@ -129,17 +177,18 @@ fn process_stream(mut stream: &mut TcpStream) -> StreamData {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum Message {
-    Up,
-    Down,
-    Left,
-    Right
+    Up(String),
+    Down(String),
+    Left(String),
+    Right(String)
 }
 
 fn main() {
     let mut engine = Engine::<Message>::new().with_subsystem(SS {})
         .with_system(ConnectionSystem {}, "c", &[])
-        .with_system(MoveSystem {}, "m", &["c"])
-        .with_system(RenderSystem {}, "render", &["c", "m"])
+        .with_system(InputSystem {}, "i", &[])
+        .with_system(MoveSystem {}, "m", &["c", "i"])
+        .with_system(RenderSystem {}, "render", &["m"])
         .with_stream_handler(process_stream)
         .build();
     if let Some(mut engine) = engine {
