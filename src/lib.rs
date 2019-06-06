@@ -26,3 +26,5 @@ pub mod components;
 pub use specs::prelude::*;
 
 pub use utils::*;
+
+pub use bytes::{Bytes, Buf, BytesMut, BufMut};

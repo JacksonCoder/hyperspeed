@@ -49,28 +49,28 @@ impl<'a> System<'a> for MoveSystem {
                 Up(ref key) => {
                     for (player, pos) in (&players, &mut pos).join() {
                         if player.player_key == *key {
-                            pos.y += 0.1;
+                            pos.y += 1.0;
                         }
                     }
                 }
                 Down(ref key) => {
                     for (player, pos) in (&players, &mut pos).join() {
                         if player.player_key == *key {
-                            pos.y -= 0.1;
+                            pos.y -= 1.0;
                         }
                     }
                 }
                 Left(ref key) => {
                     for (player, pos) in (&players, &mut pos).join() {
                         if player.player_key == *key {
-                            pos.x -= 0.1;
+                            pos.x -= 1.0;
                         }
                     }
                 }
                 Right(ref key) => {
                     for (player, pos) in (&players, &mut pos).join() {
                         if player.player_key == *key {
-                            pos.x += 0.1;
+                            pos.x += 1.0;
                         }
                     }
                 }

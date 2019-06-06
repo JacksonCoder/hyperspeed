@@ -144,6 +144,9 @@ impl<'a, 'b, E: Sync + Send + Clone + 'static> Engine<'a, 'b, E> {
                 _
             ) => {
                 if run_dispatcher {
+                    // Clear world messages
+                    self.world.get_world_mut().add_resource(Messages::<E>::new());
+
                     let inputs = self.get_inputs();
                     self.world.set_input(inputs);
                     self.world.tick();
